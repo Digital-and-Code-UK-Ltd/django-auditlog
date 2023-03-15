@@ -1,12 +1,51 @@
 # Changes
 
+## Next Release
+
+#### Breaking Changes
+
+- feat: Change `LogEntry.change` field type to `JSONField` rather than `TextField`. This change include a migration that may take time to run depending on the number of records on your `LogEntry` table ([#407](https://github.com/jazzband/django-auditlog/pull/407))
+
 #### Improvements
 
-- feat: Add `serialized_data` field on `LogEntry` model. ([#412](https://github.com/jazzband/django-auditlog/pull/412))
-- feat: Display the field name as it would be displayed in Django Admin or use `mapping_field` if available [#428](https://github.com/jazzband/django-auditlog/pull/428)
+- Changes the view when it has changes in fields `JSONField`. The `JSONField.encoder` is assigned to `json.dumps`. ([#489](https://github.com/jazzband/django-auditlog/pull/489))
+- feat: Added support for Correlation ID. ([#481](https://github.com/jazzband/django-auditlog/pull/481))
+- feat: Added pre-log and post-log signals. ([#483](https://github.com/jazzband/django-auditlog/pull/483))
+- feat: Make timestamp in LogEntry overwritable. ([#476](https://github.com/jazzband/django-auditlog/pull/476))
+- feat: Support excluding field names globally when ```AUDITLOG_INCLUDE_ALL_MODELS``` is enabled. ([#498](https://github.com/jazzband/django-auditlog/pull/498))
 
 #### Fixes
 
+- fix: Fix a bug in audit log admin page when `USE_TZ=False`. ([#511](https://github.com/jazzband/django-auditlog/pull/511))
+- fix: Make sure `LogEntry.changes_dict()` returns an empty dict instead of `None` when `json.loads()` returns `None`. ([#472](https://github.com/jazzband/django-auditlog/pull/472))
+- fix: Always set remote_addr even if the request has no authenticated user. ([#484](https://github.com/jazzband/django-auditlog/pull/484))
+
+## 2.2.2 (2023-01-16)
+
+#### Fixes
+- fix: revert [#449](https://github.com/jazzband/django-auditlog/pull/449) "Make log entries read-only in the admin" as it breaks deletion of any auditlogged model through the admin when `AuditlogHistoryField` is used. ([#496](https://github.com/jazzband/django-auditlog/pull/496))
+
+## 2.2.1 (2022-11-28)
+
+#### Fixes
+
+- fix: Make log entries read-only in the admin. ([#449](https://github.com/jazzband/django-auditlog/pull/449))
+- fix: Handle IPv6 addresses in `X-Forwarded-For`. ([#457](https://github.com/jazzband/django-auditlog/pull/457))
+
+## 2.2.0 (2022-10-07)
+
+#### Improvements
+- feat: Add `ACCESS` action to `LogEntry` model and allow object access to be logged. ([#436](https://github.com/jazzband/django-auditlog/pull/436))
+- feat: Add `serialized_data` field on `LogEntry` model. ([#412](https://github.com/jazzband/django-auditlog/pull/412))
+- feat: Display the field name as it would be displayed in Django Admin or use `mapping_field` if available [#428](https://github.com/jazzband/django-auditlog/pull/428)
+- feat: New context manager `disable_auditlog` to turn off logging and a new setting `AUDITLOG_DISABLE_ON_RAW_SAVE`
+  to disable it during raw-save operations like loaddata. [#446](https://github.com/jazzband/django-auditlog/pull/446)
+- Python: Confirm Python 3.11 support ([#447](https://github.com/jazzband/django-auditlog/pull/447))
+- feat: Replace the `django.utils.timezone.utc` by `datetime.timezone.utc`. [#448](https://github.com/jazzband/django-auditlog/pull/448)
+
+#### Fixes
+
+- fix: Foreign key values are used to check for changes in related fields instead of object representations. When changes are detected, the foreign key value is persisted in `LogEntry.changes` field instead of object representations. ([#420](https://github.com/jazzband/django-auditlog/pull/420))
 - fix: Display `created` timestamp in server timezone ([#404](https://github.com/jazzband/django-auditlog/pull/404))
 - fix: Handle port in `remote_addr` ([#417](https://github.com/jazzband/django-auditlog/pull/417))
 - fix: Handle the error with AttributeError: 'OneToOneRel' error occur during a `PolymorphicModel` has relation with other models  ([#429](https://github.com/jazzband/django-auditlog/pull/429))

@@ -1,7 +1,11 @@
+import json
+from datetime import timezone
+from typing import Optional
+
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import NOT_PROVIDED, DateTimeField, JSONField, Model
-from django.utils import timezone
+from django.utils import timezone as django_timezone
 from django.utils.encoding import smart_str
 
 
@@ -63,10 +67,19 @@ def get_field_value(obj, field):
             # DateTimeFields are timezone-aware, so we need to convert the field
             # to its naive form before we can accurately compare them for changes.
             value = field.to_python(getattr(obj, field.name, None))
-            if value is not None and settings.USE_TZ and not timezone.is_naive(value):
-                value = timezone.make_naive(value, timezone=timezone.utc)
+            if (
+                value is not None
+                and settings.USE_TZ
+                and not django_timezone.is_naive(value)
+            ):
+                value = django_timezone.make_naive(value, timezone=timezone.utc)
         elif isinstance(field, JSONField):
             value = field.to_python(getattr(obj, field.name, None))
+            value = json.dumps(value, sort_keys=True, cls=field.encoder)
+        elif (field.one_to_one or field.many_to_one) and hasattr(field, "rel_class"):
+            value = smart_str(
+                getattr(obj, field.get_attname(), None), strings_only=True
+            )
         else:
             value = smart_str(getattr(obj, field.name, None))
     except ObjectDoesNotExist:
@@ -92,7 +105,9 @@ def mask_str(value: str) -> str:
     return "*" * mask_limit + value[mask_limit:]
 
 
-def model_instance_diff(old, new, fields_to_check=None):
+def model_instance_diff(
+    old: Optional[Model], new: Optional[Model], fields_to_check=None
+):
     """
     Calculates the differences between two model instances. One of the instances may be ``None``
     (i.e., a newly created model or deleted model). This will cause all fields with a value to have

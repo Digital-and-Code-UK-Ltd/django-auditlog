@@ -1,27 +1,33 @@
-import json
-
 from django import urls as urlresolvers
 from django.conf import settings
 from django.contrib import admin
 from django.core.exceptions import FieldDoesNotExist
 from django.forms.utils import pretty_name
+from django.http import HttpRequest
 from django.urls.exceptions import NoReverseMatch
 from django.utils.html import format_html, format_html_join
 from django.utils.safestring import mark_safe
-from django.utils.timezone import localtime
+from django.utils.timezone import is_aware, localtime
+from django.utils.translation import gettext_lazy as _
 
 from auditlog.models import LogEntry
 from auditlog.registry import auditlog
+from auditlog.signals import accessed
 
 MAX = 75
 
 
 class LogEntryAdminMixin:
-    @admin.display(description="Created")
-    def created(self, obj):
-        return localtime(obj.timestamp)
+    request: HttpRequest
+    CID_TITLE = _("Click to filter by records with this correlation id")
 
-    @admin.display(description="User")
+    @admin.display(description=_("Created"))
+    def created(self, obj):
+        if is_aware(obj.timestamp):
+            return localtime(obj.timestamp)
+        return obj.timestamp
+
+    @admin.display(description=_("User"))
     def user_url(self, obj):
         if obj.actor:
             app_label, model = settings.AUTH_USER_MODEL.split(".")
@@ -34,7 +40,7 @@ class LogEntryAdminMixin:
 
         return "system"
 
-    @admin.display(description="Resource")
+    @admin.display(description=_("Resource"))
     def resource_url(self, obj):
         app_label, model = obj.content_type.app_label, obj.content_type.model
         viewname = f"admin:{app_label}_{model}_change"
@@ -48,11 +54,11 @@ class LogEntryAdminMixin:
                 '<a href="{}">{} - {}</a>', link, obj.content_type, obj.object_repr
             )
 
-    @admin.display(description="Changes")
+    @admin.display(description=_("Changes"))
     def msg_short(self, obj):
-        if obj.action == LogEntry.Action.DELETE:
+        if obj.action in [LogEntry.Action.DELETE, LogEntry.Action.ACCESS]:
             return ""  # delete
-        changes = json.loads(obj.changes)
+        changes = obj.changes_dict
         s = "" if len(changes) == 1 else "s"
         fields = ", ".join(changes.keys())
         if len(fields) > MAX:
@@ -60,9 +66,9 @@ class LogEntryAdminMixin:
             fields = fields[:i] + " .."
         return "%d change%s: %s" % (len(changes), s, fields)
 
-    @admin.display(description="Changes")
+    @admin.display(description=_("Changes"))
     def msg(self, obj):
-        changes = json.loads(obj.changes)
+        changes = obj.changes_dict
 
         atom_changes = {}
         m2m_changes = {}
@@ -112,6 +118,15 @@ class LogEntryAdminMixin:
 
         return mark_safe("".join(msg))
 
+    @admin.display(description="Correlation ID")
+    def cid_url(self, obj):
+        cid = obj.cid
+        if cid:
+            url = self._add_query_parameter("cid", cid)
+            return format_html(
+                '<a href="{}" title="{}">{}</a>', url, self.CID_TITLE, cid
+            )
+
     def _format_header(self, *labels):
         return format_html(
             "".join(["<tr>", "<th>{}</th>" * len(labels), "</tr>"]), *labels
@@ -137,3 +152,16 @@ class LogEntryAdminMixin:
             return pretty_name(getattr(field, "verbose_name", field_name))
         except FieldDoesNotExist:
             return pretty_name(field_name)
+
+    def _add_query_parameter(self, key: str, value: str):
+        full_path = self.request.get_full_path()
+        delimiter = "&" if "?" in full_path else "?"
+
+        return f"{full_path}{delimiter}{key}={value}"
+
+
+class LogAccessMixin:
+    def render_to_response(self, context, **response_kwargs):
+        obj = self.get_object()
+        accessed.send(obj.__class__, instance=obj)
+        return super().render_to_response(context, **response_kwargs)

@@ -37,6 +37,25 @@ It is recommended to place the register code (``auditlog.register(MyModel)``) at
 This ensures that every time your model is imported it will also be registered to log changes. Auditlog makes sure that
 each model is only registered once, otherwise duplicate log entries would occur.
 
+
+**Logging access**
+
+By default, Auditlog will only log changes to your model instances. If you want to log access to your model instances as well, Auditlog provides a mixin class for that purpose. Simply add the :py:class:`auditlog.mixins.LogAccessMixin` to your class based view and Auditlog will log access to your model instances. The mixin expects your view to have a ``get_object`` method that returns the model instance for which access shall be logged - this is usually the case for DetailViews and UpdateViews.
+
+A DetailView utilizing the LogAccessMixin could look like the following example:
+
+.. code-block:: python
+
+    from django.views.generic import DetailView
+
+    from auditlog.mixins import LogAccessMixin
+
+    class MyModelDetailView(LogAccessMixin, DetailView):
+        model = MyModel
+
+        # View code goes here
+
+
 **Excluding fields**
 
 Fields that are excluded will not trigger saving a new log entry and will not show up in the recorded changes.
@@ -128,8 +147,8 @@ Objects are serialized using the Django core serializer. Keyword arguments may b
 .. code-block:: python
 
     auditlog.register(
-        MyModel, 
-        serialize_data=True, 
+        MyModel,
+        serialize_data=True,
         serialize_kwargs={"fields": ["foo", "bar", "biz", "baz"]}
     )
 
@@ -144,8 +163,18 @@ Note that all fields on the object will be serialized unless restricted with one
         serialize_auditlog_fields_only=True
     )
 
-Field masking is supported in object serialization. Any value belonging to a field whose name is found in the ``mask_fields`` list will be masked in the serialized object data. Masked values are obfuscated with asterisks in the same way as they are in the ``LogEntry.changes`` field. 
+Field masking is supported in object serialization. Any value belonging to a field whose name is found in the ``mask_fields`` list will be masked in the serialized object data. Masked values are obfuscated with asterisks in the same way as they are in the ``LogEntry.changes`` field.
 
+Correlation ID
+--------------
+
+You can store a correlation ID (cid) in the log entries by:
+
+1. Reading from a request header (specified by `AUDITLOG_CID_HEADER`)
+2. Using a custom cid getter (specified by `AUDITLOG_CID_GETTER`)
+
+Using the custom getter is helpful for integrating with a third-party cid package
+such as `django-cid <https://pypi.org/project/django-cid/>`_.
 
 Settings
 --------
@@ -159,6 +188,23 @@ You can use this setting to register all your models:
     AUDITLOG_INCLUDE_ALL_MODELS=True
 
 .. versionadded:: 2.1.0
+
+**AUDITLOG_EXCLUDE_TRACKING_FIELDS**
+
+You can use this setting to exclude named fields from ALL models.
+This is useful when lots of models share similar fields like
+```created``` and ```modified``` and you want those excluded from
+logging.
+It will be considered when ``AUDITLOG_INCLUDE_ALL_MODELS`` is `True`.
+
+.. code-block:: python
+
+    AUDITLOG_EXCLUDE_TRACKING_FIELDS = (
+        "created",
+        "modified"
+    )
+
+.. versionadded:: 3.0.0
 
 **AUDITLOG_EXCLUDE_TRACKING_MODELS**
 
@@ -195,11 +241,40 @@ It must be a list or tuple. Each item in this setting can be a:
             },
             "mask_fields": ["field5", "field6"],
             "m2m_fields": ["field7", "field8"],
+            "serialize_data": True,
+            "serialize_auditlog_fields_only": False,
+            "serialize_kwargs": {"fields": ["foo", "bar", "biz", "baz"]},
         },
         "<appname>.<model3>",
     )
 
 .. versionadded:: 2.1.0
+
+**AUDITLOG_DISABLE_ON_RAW_SAVE**
+
+Disables logging during raw save. (I.e. for instance using loaddata)
+
+.. note::
+
+    M2M operations will still be logged, since they're never considered `raw`. To disable them
+    you must remove their setting or use the `disable_auditlog` context manager.
+
+.. versionadded:: 2.2.0
+
+**AUDITLOG_CID_HEADER**
+
+The request header containing the Correlation ID value to use in all log entries created as a result of the request.
+The value can of in the format `HTTP_MY_HEADER` or `my-header`.
+
+.. versionadded:: 3.0.0
+
+**AUDITLOG_CID_GETTER**
+
+The function to use to retrieve the Correlation ID. The value can be a callable or a string import path.
+
+If the value is `None`, the default getter will be used.
+
+.. versionadded:: 3.0.0
 
 Actors
 ------
@@ -228,10 +303,11 @@ It is recommended to keep all middleware that alters the request loaded before A
     user as actor. To only have some object changes to be logged with the current request's user as actor manual logging is
     required.
 
-Context manager
-***************
+Context managers
+----------------
 
-.. versionadded:: 2.1.0
+Set actor
+*********
 
 To enable the automatic logging of the actors outside of request context (e.g. in a Celery task), you can use a context
 manager::
@@ -243,6 +319,26 @@ manager::
         with set_actor(actor):
             # if your code here leads to creation of LogEntry instances, these will have the actor set
             ...
+
+
+.. versionadded:: 2.1.0
+
+
+Disable auditlog
+****************
+
+Disable auditlog temporary, for instance if you need to install a large fixture on a live system or cleanup
+corrupt data::
+
+    from auditlog.context import disable_auditlog
+
+    with disable_auditlog():
+        # Do things silently here
+        ...
+
+
+.. versionadded:: 2.2.0
+
 
 Object history
 --------------
